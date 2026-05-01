@@ -2,22 +2,26 @@ import random
 from collections import defaultdict
 
 MODEL_TEXT = "shakespeare.txt"
-SEED_CHAR = "t"
+SEED_BIGRAM = "t"
+SEED_TRIGRAM = "th"
 OUTPUT_LENGTH = 500
 
 
-def build_bigram_probabilities(text: str) -> dict[str, dict[str, float]]:
+def build_ngram_probabilities(text: str, n: int) -> dict[str, dict[str, float]]:
     counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    for current_char, next_char in zip(text, text[1:]):
-        counts[current_char][next_char] += 1
+    for i in range(len(text) - n + 1):
+        context, next_char = (
+            text[i : i + n - 1],
+            text[i + n - 1],
+        )  # n-1 char context → 1 char prediction
+        counts[context][next_char] += 1
 
-    probabilities: dict[str, dict[str, float]] = {}
-    for current_char, current_char_sucessors in counts.items():
-        total = sum(current_char_sucessors.values())
-        probabilities[current_char] = {
-            key: value / total for key, value in current_char_sucessors.items()
+    return {
+        context: {
+            key: value / sum(successors.values()) for key, value in successors.items()
         }
-    return probabilities
+        for context, successors in counts.items()
+    }
 
 
 def validate_probs(probabilities: dict[str, dict[str, float]]) -> None:
@@ -27,13 +31,20 @@ def validate_probs(probabilities: dict[str, dict[str, float]]) -> None:
             raise ValueError(f"row {char!r} sums to {total}, expected 1.0")
 
 
-def generate(probabilities: dict[str, dict[str, float]], seed: str, length: int) -> str:
+def generate(
+    probabilities: dict[str, dict[str, float]],
+    seed: str,
+    length: int,
+) -> str:
     current = seed
     output = [seed]
     for _ in range(length):
         successors = probabilities[current]
-        current = random.choices(list(successors.keys()), list(successors.values()))[0]
-        output.append(current)
+        picked_char = random.choices(
+            list(successors.keys()), list(successors.values())
+        )[0]
+        output.append(picked_char)
+        current = current[1:] + picked_char
     return "".join(output)
 
 
@@ -41,6 +52,8 @@ if __name__ == "__main__":
     with open(MODEL_TEXT) as f:
         text = f.read().lower()
 
-    built_probabilities = build_bigram_probabilities(text)
-    validate_probs(built_probabilities)
-    print(generate(built_probabilities, seed=SEED_CHAR, length=OUTPUT_LENGTH))
+    for n, seed in [(2, SEED_BIGRAM), (3, SEED_TRIGRAM)]:
+        probs = build_ngram_probabilities(text, n)
+        validate_probs(probs)
+        print(f"--- {n}-gram ---")
+        print(generate(probs, seed=seed, length=OUTPUT_LENGTH))
