@@ -1,30 +1,46 @@
 import random
 from collections import defaultdict
 
-with open('shakespeare.txt', 'r') as f:
-    text = f.read().lower()
+MODEL_TEXT = "shakespeare.txt"
+SEED_CHAR = "t"
+OUTPUT_LENGTH = 500
 
-counts = defaultdict(lambda: defaultdict(float))
-for i in range(len(text) - 1):
-    counts[text[i]][text[i+1]] += 1
 
-for key in counts:
-  total_count = sum(counts[key].values())
-  for sub_key in counts[key]:
-    counts[key][sub_key] = counts[key][sub_key] / total_count
+def build_bigram_probabilities(text: str) -> dict[str, dict[str, float]]:
+    counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for current_char, next_char in zip(text, text[1:]):
+        counts[current_char][next_char] += 1
 
-for key in counts:
-    total_ratio = sum(counts[key].values())
-    assert abs(total_ratio - 1.0) < 1e-9, f"row {key!r} sums to {total_ratio}"
+    probabilities: dict[str, dict[str, float]] = {}
+    for current_char, current_char_sucessors in counts.items():
+        total = sum(current_char_sucessors.values())
+        probabilities[current_char] = {
+            key: value / total for key, value in current_char_sucessors.items()
+        }
+    return probabilities
 
-# Chose 't' here, but it could have been any other, or
-# could have used random to choose the letter and be sure it would be in the dict
-current = output = 't'
-for _ in range(500):
-    next_chars = counts[current]
-    picked_char = random.choices(list(next_chars.keys()), list(next_chars.values()))[0]
-    output += picked_char
-    current = picked_char
 
-print(output)
+def validate_probs(probabilities: dict[str, dict[str, float]]) -> None:
+    for char, row in probabilities.items():
+        total = sum(row.values())
+        if abs(total - 1.0) > 1e-9:
+            raise ValueError(f"row {char!r} sums to {total}, expected 1.0")
 
+
+def generate(probabilities: dict[str, dict[str, float]], seed: str, length: int) -> str:
+    current = seed
+    output = [seed]
+    for _ in range(length):
+        successors = probabilities[current]
+        current = random.choices(list(successors.keys()), list(successors.values()))[0]
+        output.append(current)
+    return "".join(output)
+
+
+if __name__ == "__main__":
+    with open(MODEL_TEXT) as f:
+        text = f.read().lower()
+
+    built_probabilities = build_bigram_probabilities(text)
+    validate_probs(built_probabilities)
+    print(generate(built_probabilities, seed=SEED_CHAR, length=OUTPUT_LENGTH))
